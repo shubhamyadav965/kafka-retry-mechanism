@@ -8,7 +8,8 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
   private readonly kafka: Kafka;
   private readonly consumer: Consumer;
 
-  constructor(private readonly kafkaService: KafkaService,
+  constructor(
+    private readonly kafkaService: KafkaService,
     private readonly orderProcessor: OrderProcessor,
   ) {
     this.kafka = new Kafka({
@@ -41,7 +42,7 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
         try {
           // Temporary failure simulation
           throw new Error('Something went wrong while processing order');
-        } catch (error) {
+        } catch {
           console.log('Processing failed. Sending to retry topic...');
           await this.kafkaService.sendToRetryTopic(value ?? '');
         }

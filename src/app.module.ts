@@ -10,6 +10,12 @@ import { OrderProcessor } from './orders/orders.processor';
   imports: [],
   controllers: [AppController],
   // Both must be providers: Nest calls onModuleInit (connect) on each
-  providers: [AppService, KafkaService, KafkaConsumer, RetryConsumer, OrderProcessor,],
+  providers: [
+    AppService,
+    KafkaService,
+    KafkaConsumer,
+    RetryConsumer,
+    OrderProcessor,
+  ],
 })
 export class AppModule {}
