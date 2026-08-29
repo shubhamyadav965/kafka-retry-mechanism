@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Consumer, Kafka } from 'kafkajs';
 import { KafkaService } from './kafka.service';
-import { OrderProcessor } from '../orders/orders.processor';
+import { OrderProcessor } from '../orders/order.processor';
 
 @Injectable()
 export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
@@ -44,7 +44,7 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
           throw new Error('Something went wrong while processing order');
         } catch {
           console.log('Processing failed. Sending to retry topic...');
-          await this.kafkaService.sendToRetryTopic(value ?? '');
+          await this.kafkaService.sendToRetryTopic(value ?? '', 1);
         }
       },
     });

@@ -37,12 +37,17 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async sendToRetryTopic(value: string) {
+  async sendToRetryTopic(value: string, retryCount: number) {
     await this.producer.send({
       topic: 'orders.retry',
       messages: [
         {
           value,
+          headers: {
+            retry_count: retryCount.toString(),
+            max_retries: '3',
+            orginal_topic: 'orders',
+          },
         },
       ],
     });

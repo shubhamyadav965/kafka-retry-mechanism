@@ -4,7 +4,7 @@ import { AppService } from './app.service';
 import { KafkaService } from './kafka/kafka.service';
 import { KafkaConsumer } from './kafka/kafka.consumer';
 import { RetryConsumer } from './kafka/retry.consumer';
-import { OrderProcessor } from './orders/orders.processor';
+import { OrderProcessor } from './orders/order.processor';
 
 @Module({
   imports: [],

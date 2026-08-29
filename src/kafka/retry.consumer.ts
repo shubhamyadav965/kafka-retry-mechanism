@@ -1,13 +1,13 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-
 import { Consumer, Kafka } from 'kafkajs';
+import { OrderProcessor } from '../orders/order.processor';
 
 @Injectable()
 export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
   private readonly kafka: Kafka;
   private readonly consumer: Consumer;
 
-  constructor() {
+  constructor(private readonly orderProcessor: OrderProcessor) {
     this.kafka = new Kafka({
       clientId: 'order-retry-consumer',
       brokers: ['localhost:9092'],
@@ -27,12 +27,27 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
     });
 
     await this.consumer.run({
-      eachMessage: ({ message }) => {
+      eachMessage: async ({ message }) => {
         const value = message.value?.toString();
 
-        console.log('Retry consumer received:', value);
+        const retryCountHeader = message.headers?.retry_count?.toString();
+        const retryCount = Number(retryCountHeader ?? '0');
 
-        return Promise.resolve();
+        console.log(
+          'Retry consumer received:',
+          value,
+          'offset:',
+          message.offset,
+        );
+        console.log('Retry count:', retryCount);
+
+        try {
+          await this.orderProcessor.process(value ?? '');
+
+          console.log('Retry processing succeeded');
+        } catch (error) {
+          console.log('Retry processing failed', error);
+        }
       },
     });
 
