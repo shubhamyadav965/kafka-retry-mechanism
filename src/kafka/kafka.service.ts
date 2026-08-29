@@ -36,4 +36,15 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
       ],
     });
   }
+
+  async sendToRetryTopic(value: string) {
+    await this.producer.send({
+      topic: 'orders.retry',
+      messages: [
+        {
+          value,
+        },
+      ],
+    });
+  }
 }

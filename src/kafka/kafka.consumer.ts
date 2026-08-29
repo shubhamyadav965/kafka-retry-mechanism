@@ -1,12 +1,16 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Consumer, Kafka } from 'kafkajs';
+import { KafkaService } from './kafka.service';
+import { OrderProcessor } from '../orders/orders.processor';
 
 @Injectable()
 export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
   private readonly kafka: Kafka;
   private readonly consumer: Consumer;
 
-  constructor() {
+  constructor(private readonly kafkaService: KafkaService,
+    private readonly orderProcessor: OrderProcessor,
+  ) {
     this.kafka = new Kafka({
       clientId: 'order-consumer',
       brokers: ['localhost:9092'], // docker-compose advertised listener
@@ -27,13 +31,20 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
     });
 
     await this.consumer.run({
-      eachMessage: ({ message }) => {
+      eachMessage: async ({ message }) => {
         const value = message.value?.toString();
 
         console.log('Received message:', value);
 
         // Temporary: force a failure so retry/DLQ behavior can be built next
-        throw new Error('Something went wrong while processing order');
+        //throw new Error('Something went wrong while processing order');
+        try {
+          // Temporary failure simulation
+          throw new Error('Something went wrong while processing order');
+        } catch (error) {
+          console.log('Processing failed. Sending to retry topic...');
+          await this.kafkaService.sendToRetryTopic(value ?? '');
+        }
       },
     });
 
