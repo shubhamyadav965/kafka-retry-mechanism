@@ -52,4 +52,20 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
       ],
     });
   }
+
+  async sendToDlq(value: string, retryCount: number, errorMessage: string) {
+    await this.producer.send({
+      topic: 'orders.dlq',
+      messages: [
+        {
+          value,
+          headers: {
+            retry_count: retryCount.toString(),
+            original_topic: 'orders',
+            error_message: errorMessage,
+          },
+        },
+      ],
+    });
+  }
 }
