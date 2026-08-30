@@ -1,64 +1,108 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Kafka, Producer } from 'kafkajs';
 
 @Injectable()
 export class KafkaService implements OnModuleInit, OnModuleDestroy {
+  // Kafka client used to communicate with our Kafka broker.
   private readonly kafka: Kafka;
+
+  // Producer is responsible for publishing messages to Kafka topics.
   private readonly producer: Producer;
 
   constructor() {
     this.kafka = new Kafka({
+      // Identifies this application when communicating with Kafka.
       clientId: 'kafka-retry-framework',
-      brokers: ['localhost:9092'], // docker-compose advertised listener
+
+      // Kafka broker exposed on localhost by Docker.
+      brokers: ['localhost:9092'],
     });
 
+    // Create the Kafka producer.
     this.producer = this.kafka.producer();
   }
 
   async onModuleInit() {
-    // Connect at boot so POST /orders does not pay a first-request handshake
+    // Establish connection with Kafka when NestJS starts.
     await this.producer.connect();
+
     console.log('Kafka producer connected');
   }
 
   async onModuleDestroy() {
+    // Gracefully close the Kafka connection when NestJS shuts down.
     await this.producer.disconnect();
+
     console.log('Kafka producer disconnected');
   }
 
-  async sendMessage(topic: string, message: any) {
+  /**
+   * Publish a message to an arbitrary topic.
+   *
+   * Used by the API layer (e.g. POST /orders) to publish new
+   * business events onto the main orders topic.
+   */
+  async sendMessage(topic: string, message: unknown) {
     await this.producer.send({
       topic,
       messages: [
         {
-          value: JSON.stringify(message), // Kafka payload is bytes, not objects
+          // Kafka payload is bytes, not objects.
+          value: JSON.stringify(message),
         },
       ],
     });
   }
 
+  /**
+   * Publish a failed message to the retry topic.
+   *
+   * We don't physically move the original Kafka message.
+   * Instead, we create a new Kafka message in orders.retry.
+   */
   async sendToRetryTopic(value: string, retryCount: number) {
     await this.producer.send({
+      // Failed messages are published here for retry processing.
       topic: 'orders.retry',
+
       messages: [
         {
+          // Original business payload.
           value,
+
+          // Metadata used by our retry framework.
+          // This is kept in Kafka headers instead of changing
+          // the actual business payload.
           headers: {
+            // Number of times this message has been retried.
             retry_count: retryCount.toString(),
+
+            // Maximum number of retry attempts allowed.
             max_retries: '3',
-            orginal_topic: 'orders',
+
+            // Topic where the message originally came from.
+            original_topic: 'orders',
           },
         },
       ],
     });
   }
 
+  /**
+   * Send a message to the Dead Letter Queue (DLQ)
+   * after all retry attempts have been exhausted.
+   */
   async sendToDlq(value: string, retryCount: number, errorMessage: string) {
     await this.producer.send({
+      // Messages that cannot be successfully processed
+      // after the maximum retries end up here.
       topic: 'orders.dlq',
+
       messages: [
         {
           value,
+
+          // Store useful debugging information with the failed message.
           headers: {
             retry_count: retryCount.toString(),
             original_topic: 'orders',

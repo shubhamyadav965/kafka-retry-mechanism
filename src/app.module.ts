@@ -9,7 +9,12 @@ import { OrderProcessor } from './orders/order.processor';
 @Module({
   imports: [],
   controllers: [AppController],
-  // Both must be providers: Nest calls onModuleInit (connect) on each
+  // Providers are classes managed by NestJS dependency injection.
+  //
+  // KafkaService       → produces Kafka messages
+  // KafkaConsumer      → consumes normal orders
+  // RetryConsumer      → consumes failed orders
+  // OrderProcessor     → contains business processing logic
   providers: [
     AppService,
     KafkaService,
