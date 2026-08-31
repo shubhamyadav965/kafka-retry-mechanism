@@ -4,6 +4,11 @@ import { Consumer, Kafka } from 'kafkajs';
 
 import { OrderProcessor } from '../orders/order.processor';
 import { KafkaService } from './kafka.service';
+import {
+  getRetryDelay,
+  getRetryTopic,
+  RETRY_TOPICS,
+} from '../config/retry-policy';
 
 @Injectable()
 export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
@@ -34,9 +39,10 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
     // Connect retry consumer to Kafka.
     await this.consumer.connect();
 
-    // Listen to messages from the retry topic.
+    // Listen to messages across all tiered retry topics
+    // (orders.retry.1m, orders.retry.5m, orders.retry.10m).
     await this.consumer.subscribe({
-      topic: 'orders.retry',
+      topics: RETRY_TOPICS,
 
       // Useful during development so we can replay
       // messages already present in the topic.
@@ -81,11 +87,23 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
           if (retryCount < maxRetries) {
             const nextRetryCount = retryCount + 1;
 
-            console.log(`Sending message for retry ${nextRetryCount}`);
+            const retryTopic = getRetryTopic(nextRetryCount);
+            const retryDelay = getRetryDelay(nextRetryCount);
+            const scheduledRetryAt = new Date(
+              Date.now() + retryDelay,
+            ).toISOString();
 
+            console.log(`Scheduling retry ${nextRetryCount}`);
+            console.log(`Retry topic: ${retryTopic}`);
+            console.log(`Retry at: ${scheduledRetryAt}`);
+
+            // kafkaService.sendToRetryTopic derives its own scheduled
+            // time from retryCount, so scheduledRetryAt above is just
+            // for logging visibility into what it will compute.
             await this.kafkaService.sendToRetryTopic(
               value ?? '',
               nextRetryCount,
+              retryTopic,
             );
           } else {
             // Maximum retries have been exhausted.

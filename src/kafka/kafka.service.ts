@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Kafka, Producer } from 'kafkajs';
+import { getRetryDelay } from '../config/retry-policy';
 
 @Injectable()
 export class KafkaService implements OnModuleInit, OnModuleDestroy {
@@ -60,11 +61,20 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
    * We don't physically move the original Kafka message.
    * Instead, we create a new Kafka message in orders.retry.
    */
-  async sendToRetryTopic(value: string, retryCount: number) {
+  async sendToRetryTopic(
+    value: string,
+    retryCount: number,
+    retryTopic: string,
+  ) {
+    // Get the delay associated with this retry attempt.
+    const retryDelay = getRetryDelay(retryCount);
+
+    // Calculate the time when this message should become eligible for retry.
+    const scheduledRetryAt = new Date(Date.now() + retryDelay).toISOString();
+
     await this.producer.send({
       // Failed messages are published here for retry processing.
-      topic: 'orders.retry',
-
+      topic: retryTopic,
       messages: [
         {
           // Original business payload.
@@ -76,12 +86,10 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
           headers: {
             // Number of times this message has been retried.
             retry_count: retryCount.toString(),
-
-            // Maximum number of retry attempts allowed.
             max_retries: '3',
-
             // Topic where the message originally came from.
             original_topic: 'orders',
+            scheduled_retry_at: scheduledRetryAt,
           },
         },
       ],

@@ -4,6 +4,7 @@ import { Consumer, Kafka } from 'kafkajs';
 
 import { KafkaService } from './kafka.service';
 import { OrderProcessor } from '../orders/order.processor';
+import { getRetryTopic } from '../config/retry-policy';
 
 @Injectable()
 export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
@@ -64,7 +65,13 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
           console.log('Processing failed. Sending to retry topic...');
 
           // First failure from the main topic becomes retry #1.
-          await this.kafkaService.sendToRetryTopic(value ?? '', 1);
+          const retryCount = 1;
+
+          await this.kafkaService.sendToRetryTopic(
+            value ?? '',
+            retryCount,
+            getRetryTopic(retryCount),
+          );
         }
       },
     });
