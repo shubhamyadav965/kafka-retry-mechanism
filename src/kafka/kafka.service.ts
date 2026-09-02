@@ -16,7 +16,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
       clientId: 'kafka-retry-framework',
 
       // Kafka broker exposed on localhost by Docker.
-      brokers: ['localhost:9092'],
+      brokers: ['kafka:9093'],
     });
 
     // Create the Kafka producer.

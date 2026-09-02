@@ -5,6 +5,7 @@ import { KafkaService } from './kafka/kafka.service';
 import { KafkaConsumer } from './kafka/kafka.consumer';
 import { RetryConsumer } from './kafka/retry.consumer';
 import { OrderProcessor } from './orders/order.processor';
+import { RetryScheduler } from './retry/retry.scheduler';
 
 @Module({
   imports: [],
@@ -15,12 +16,14 @@ import { OrderProcessor } from './orders/order.processor';
   // KafkaConsumer      → consumes normal orders
   // RetryConsumer      → consumes failed orders
   // OrderProcessor     → contains business processing logic
+  // RetryScheduler     → re-processes retry messages once due
   providers: [
     AppService,
     KafkaService,
     KafkaConsumer,
     RetryConsumer,
     OrderProcessor,
+    RetryScheduler,
   ],
 })
 export class AppModule {}

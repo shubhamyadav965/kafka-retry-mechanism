@@ -23,7 +23,7 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
       clientId: 'order-consumer',
 
       // Kafka broker address.
-      brokers: ['localhost:9092'],
+      brokers: ['kafka:9093'],
     });
 
     this.consumer = this.kafka.consumer({

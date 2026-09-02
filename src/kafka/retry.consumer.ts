@@ -1,7 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-
 import { Consumer, Kafka } from 'kafkajs';
-
 import { OrderProcessor } from '../orders/order.processor';
 import { KafkaService } from './kafka.service';
 import {
@@ -25,7 +23,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
   ) {
     this.kafka = new Kafka({
       clientId: 'order-retry-consumer',
-      brokers: ['localhost:9092'],
+      brokers: ['kafka:9093'],
     });
 
     this.consumer = this.kafka.consumer({

@@ -29,3 +29,17 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
     depends_on:
       - kafka
+
+  redis:
+    image: redis:7-alpine
+    container_name: kafka-retry-redis
+    ports:
+      - "6379:6379"
+
+  nest-app:
+    build: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      - kafka
+      - redis
