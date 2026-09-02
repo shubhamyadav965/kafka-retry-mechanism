@@ -1,9 +1,13 @@
-import { Controller, Post } from '@nestjs/common';
+import { Controller, Get, Post } from '@nestjs/common';
 import { KafkaService } from './kafka/kafka.service';
+import { RedisService } from './redis/redis.service';
 
 @Controller()
 export class AppController {
-  constructor(private readonly kafkaService: KafkaService) {}
+  constructor(
+    private readonly kafkaService: KafkaService,
+    private readonly redisService: RedisService,
+  ) {}
 
   @Post('orders')
   async createOrder() {
@@ -21,6 +25,19 @@ export class AppController {
     return {
       message: 'Order event sent to Kafka',
       order,
+    };
+  }
+
+  // Temporary: verifies the Redis connection before wiring it
+  // into the retry system.
+  @Get('/redis-test')
+  async redisTest() {
+    await this.redisService.set('test:key', 'hello redis');
+
+    const value = await this.redisService.get('test:key');
+
+    return {
+      value,
     };
   }
 }

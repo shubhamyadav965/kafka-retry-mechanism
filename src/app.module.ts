@@ -6,9 +6,12 @@ import { KafkaConsumer } from './kafka/kafka.consumer';
 import { RetryConsumer } from './kafka/retry.consumer';
 import { OrderProcessor } from './orders/order.processor';
 import { RetryScheduler } from './retry/retry.scheduler';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
-  imports: [],
+  // RedisModule is a module (exports RedisService), so it belongs in
+  // imports, not providers.
+  imports: [RedisModule],
   controllers: [AppController],
   // Providers are classes managed by NestJS dependency injection.
   //
