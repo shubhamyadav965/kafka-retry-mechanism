@@ -1,93 +1,86 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 
-import { Consumer, Kafka } from 'kafkajs';
-
-import { OrderProcessor } from '../orders/order.processor';
 import { KafkaService } from '../kafka/kafka.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
-  private readonly kafka: Kafka;
-  private readonly consumer: Consumer;
+  // Timer used to periodically check Redis.
+  private interval?: NodeJS.Timeout;
+
+  // Prevent multiple scheduler runs from happening
+  // at the same time.
+  private isRunning = false;
 
   constructor(
-    private readonly orderProcessor: OrderProcessor,
+    private readonly redisService: RedisService,
     private readonly kafkaService: KafkaService,
-  ) {
-    this.kafka = new Kafka({
-      clientId: 'retry-scheduler',
-      brokers: ['kafka:9093'],
-    });
-
-    this.consumer = this.kafka.consumer({
-      groupId: 'retry-scheduler-group',
-    });
-  }
+  ) {}
 
   async onModuleInit() {
-    await this.consumer.connect();
+    console.log('Retry scheduler started');
 
-    // The scheduler listens to all retry-stage topics.
-    await this.consumer.subscribe({
-      topic: 'orders.retry.1m',
-      fromBeginning: true,
-    });
+    // Check for due retry jobs immediately when
+    // the application starts.
+    await this.processDueRetries();
 
-    await this.consumer.subscribe({
-      topic: 'orders.retry.5m',
-      fromBeginning: true,
-    });
-
-    await this.consumer.subscribe({
-      topic: 'orders.retry.10m',
-      fromBeginning: true,
-    });
-
-    await this.consumer.run({
-      eachMessage: async ({ message }) => {
-        const value = message.value?.toString();
-
-        const scheduledRetryAt =
-          message.headers?.scheduled_retry_at?.toString();
-
-        console.log('Retry scheduler received message:', value);
-
-        console.log('Scheduled retry at:', scheduledRetryAt);
-
-        if (!scheduledRetryAt) {
-          console.log('No scheduled retry time found. Skipping message.');
-
-          return;
-        }
-
-        const scheduledTime = new Date(scheduledRetryAt).getTime();
-
-        const currentTime = Date.now();
-
-        if (currentTime < scheduledTime) {
-          console.log('Retry is not ready yet.');
-
-          return;
-        }
-
-        console.log('Retry is ready. Processing message...');
-
-        try {
-          await this.orderProcessor.process(value ?? '');
-
-          console.log('Retry processing succeeded.');
-        } catch {
-          console.log('Retry processing failed.');
-        }
-      },
-    });
-
-    console.log('Retry scheduler connected');
+    // Check Redis every second.
+    this.interval = setInterval(() => {
+      void this.processDueRetries();
+    }, 1000);
   }
 
-  async onModuleDestroy() {
-    await this.consumer.disconnect();
+  onModuleDestroy() {
+    // Stop the scheduler when NestJS shuts down.
+    if (this.interval) {
+      clearInterval(this.interval);
+    }
 
-    console.log('Retry scheduler disconnected');
+    console.log('Retry scheduler stopped');
+  }
+
+  /**
+   * Find retry jobs whose scheduled time has arrived
+   * and publish them back to Kafka.
+   */
+  private async processDueRetries(): Promise<void> {
+    // Do not start another run while the previous
+    // run is still processing jobs.
+    if (this.isRunning) {
+      return;
+    }
+
+    this.isRunning = true;
+
+    try {
+      // Get retry jobs whose scheduled time is <= now.
+      const jobs = await this.redisService.getDueRetryJobs();
+
+      if (jobs.length === 0) {
+        return;
+      }
+
+      console.log(`Found ${jobs.length} due retry job(s)`);
+
+      for (const job of jobs) {
+        try {
+          console.log(`Publishing retry job to ${job.retryTopic}`);
+
+          // Publish the retry job to Kafka.
+          await this.kafkaService.publishRetryJob(job);
+
+          // Remove the job only after Kafka publishing succeeds.
+          await this.redisService.removeRetryJob(job);
+
+          console.log('Retry job published successfully');
+        } catch (error) {
+          // Keep the job in Redis if Kafka publishing fails.
+          // The next scheduler cycle will try again.
+          console.error('Failed to publish retry job:', error);
+        }
+      }
+    } finally {
+      this.isRunning = false;
+    }
   }
 }

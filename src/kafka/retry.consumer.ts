@@ -2,6 +2,8 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Consumer, Kafka } from 'kafkajs';
 import { OrderProcessor } from '../orders/order.processor';
 import { KafkaService } from './kafka.service';
+import { RedisService } from '../redis/redis.service';
+import { RetryJob } from '../redis/retry-job';
 import {
   getRetryDelay,
   getRetryTopic,
@@ -20,6 +22,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly orderProcessor: OrderProcessor,
     private readonly kafkaService: KafkaService,
+    private readonly redisService: RedisService,
   ) {
     this.kafka = new Kafka({
       clientId: 'order-retry-consumer',
@@ -85,8 +88,13 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
           if (retryCount < maxRetries) {
             const nextRetryCount = retryCount + 1;
 
+            // Determine which retry topic this attempt belongs to.
             const retryTopic = getRetryTopic(nextRetryCount);
+
+            // Determine how long we should wait before retrying.
             const retryDelay = getRetryDelay(nextRetryCount);
+
+            // Calculate when this retry becomes eligible.
             const scheduledRetryAt = new Date(
               Date.now() + retryDelay,
             ).toISOString();
@@ -95,14 +103,22 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
             console.log(`Retry topic: ${retryTopic}`);
             console.log(`Retry at: ${scheduledRetryAt}`);
 
-            // kafkaService.sendToRetryTopic derives its own scheduled
-            // time from retryCount, so scheduledRetryAt above is just
-            // for logging visibility into what it will compute.
-            await this.kafkaService.sendToRetryTopic(
-              value ?? '',
-              nextRetryCount,
+            // Create a retry job for Redis.
+            const retryJob: RetryJob = {
+              value: value ?? '',
+              retryCount: nextRetryCount,
               retryTopic,
-            );
+              originalTopic: 'orders',
+              scheduledRetryAt,
+            };
+
+            // Store the retry job in Redis.
+            //
+            // Redis will keep the job until its scheduled
+            // retry time arrives.
+            await this.redisService.addRetryJob(retryJob);
+
+            console.log('Retry job stored in Redis');
           } else {
             // Maximum retries have been exhausted.
             // Send the message to the Dead Letter Queue.

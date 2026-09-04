@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Kafka, Producer } from 'kafkajs';
 import { getRetryDelay } from '../config/retry-policy';
+import { RetryJob } from '../redis/retry-job';
 
 @Injectable()
 export class KafkaService implements OnModuleInit, OnModuleDestroy {
@@ -90,6 +91,26 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
             // Topic where the message originally came from.
             original_topic: 'orders',
             scheduled_retry_at: scheduledRetryAt,
+          },
+        },
+      ],
+    });
+  }
+
+  //Publish a scheduled retry job back to Kafka. The RetryScheduler calls this method when the retry becomes due in Redis.
+  async publishRetryJob(job: RetryJob): Promise<void> {
+    await this.producer.send({
+      topic: job.retryTopic,
+      messages: [
+        {
+          // Send the original business message unchanged.
+          value: job.value,
+          // Restore retry metadata as Kafka headers.
+          headers: {
+            retry_count: job.retryCount.toString(),
+            max_retries: '3',
+            original_topic: job.originalTopic,
+            scheduled_retry_at: job.scheduledRetryAt,
           },
         },
       ],
