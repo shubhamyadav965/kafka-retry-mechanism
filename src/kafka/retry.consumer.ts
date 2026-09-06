@@ -69,6 +69,8 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
           maxRetriesHeader ?? getMaxRetries().toString(),
         );
 
+        const originalTopic = message.headers?.original_topic?.toString() ?? 'unknown';
+
         console.log(
           'Retry consumer received:',
           value,
@@ -111,7 +113,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
               value: value ?? '',
               retryCount: nextRetryCount,
               retryTopic,
-              originalTopic: 'orders',
+              originalTopic,
               scheduledRetryAt,
             };
 
@@ -131,7 +133,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
               value ?? '',
               retryCount,
               error instanceof Error ? error.message : 'Unknown error',
-              'orders',
+              originalTopic,
             );
           }
         }
