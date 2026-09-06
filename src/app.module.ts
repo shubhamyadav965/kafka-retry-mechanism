@@ -7,6 +7,7 @@ import { RetryConsumer } from './kafka/retry.consumer';
 import { OrderProcessor } from './orders/order.processor';
 import { RetryScheduler } from './retry/retry.scheduler';
 import { RedisModule } from './redis/redis.module';
+import { RetryService } from './retry/retry.service';
 
 @Module({
   // RedisModule is a module (exports RedisService), so it belongs in
@@ -27,6 +28,7 @@ import { RedisModule } from './redis/redis.module';
     RetryConsumer,
     OrderProcessor,
     RetryScheduler,
+    RetryService,
   ],
 })
 export class AppModule {}
