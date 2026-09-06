@@ -7,7 +7,8 @@ import { RetryJob } from '../redis/retry-job';
 import {
   getRetryDelay,
   getRetryTopic,
-  RETRY_TOPICS,
+  getMaxRetries,
+  RETRY_CONFIG,
 } from '../config/retry-policy';
 
 @Injectable()
@@ -43,7 +44,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
     // Listen to messages across all tiered retry topics
     // (orders.retry.1m, orders.retry.5m, orders.retry.10m).
     await this.consumer.subscribe({
-      topics: RETRY_TOPICS,
+      topics: RETRY_CONFIG.retryTopics,
 
       // Useful during development so we can replay
       // messages already present in the topic.
@@ -64,7 +65,9 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
         // Read maximum retry count from Kafka headers.
         const maxRetriesHeader = message.headers?.max_retries?.toString();
 
-        const maxRetries = Number(maxRetriesHeader ?? '3');
+        const maxRetries = Number(
+          maxRetriesHeader ?? getMaxRetries().toString(),
+        );
 
         console.log(
           'Retry consumer received:',
@@ -128,6 +131,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
               value ?? '',
               retryCount,
               error instanceof Error ? error.message : 'Unknown error',
+              'orders',
             );
           }
         }

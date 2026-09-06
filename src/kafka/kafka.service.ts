@@ -1,6 +1,10 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Kafka, Producer } from 'kafkajs';
-import { getRetryDelay } from '../config/retry-policy';
+import {
+  getRetryDelay,
+  getMaxRetries,
+  getDlqTopic,
+} from '../config/retry-policy';
 import { RetryJob } from '../redis/retry-job';
 
 @Injectable()
@@ -67,28 +71,17 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
     retryCount: number,
     retryTopic: string,
   ) {
-    // Get the delay associated with this retry attempt.
     const retryDelay = getRetryDelay(retryCount);
-
-    // Calculate the time when this message should become eligible for retry.
     const scheduledRetryAt = new Date(Date.now() + retryDelay).toISOString();
 
     await this.producer.send({
-      // Failed messages are published here for retry processing.
       topic: retryTopic,
       messages: [
         {
-          // Original business payload.
           value,
-
-          // Metadata used by our retry framework.
-          // This is kept in Kafka headers instead of changing
-          // the actual business payload.
           headers: {
-            // Number of times this message has been retried.
             retry_count: retryCount.toString(),
-            max_retries: '3',
-            // Topic where the message originally came from.
+            max_retries: getMaxRetries().toString(),
             original_topic: 'orders',
             scheduled_retry_at: scheduledRetryAt,
           },
@@ -108,7 +101,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
           // Restore retry metadata as Kafka headers.
           headers: {
             retry_count: job.retryCount.toString(),
-            max_retries: '3',
+            max_retries: getMaxRetries().toString(),
             original_topic: job.originalTopic,
             scheduled_retry_at: job.scheduledRetryAt,
           },
@@ -121,20 +114,20 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
    * Send a message to the Dead Letter Queue (DLQ)
    * after all retry attempts have been exhausted.
    */
-  async sendToDlq(value: string, retryCount: number, errorMessage: string) {
+  async sendToDlq(
+    value: string,
+    retryCount: number,
+    errorMessage: string,
+    originalTopic: string,
+  ) {
     await this.producer.send({
-      // Messages that cannot be successfully processed
-      // after the maximum retries end up here.
-      topic: 'orders.dlq',
-
+      topic: getDlqTopic(originalTopic),
       messages: [
         {
           value,
-
-          // Store useful debugging information with the failed message.
           headers: {
             retry_count: retryCount.toString(),
-            original_topic: 'orders',
+            original_topic: originalTopic,
             error_message: errorMessage,
           },
         },
