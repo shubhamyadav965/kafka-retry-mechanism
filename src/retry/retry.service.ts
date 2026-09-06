@@ -23,7 +23,10 @@ export class RetryService {
     const retryTopic = getRetryTopic(retryCount);
 
     // Find how long we should wait before executing this retry.
-    const retryDelay = getRetryDelay(retryCount);
+    const retryTopic = getRetryTopic(
+        originalTopic,
+        retryCount,
+      );
 
     // Calculate the exact time when the retry becomes eligible.
     const scheduledRetryAt = new Date(Date.now() + retryDelay).toISOString();
