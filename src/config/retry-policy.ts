@@ -48,3 +48,16 @@ export function getRetryTopic(
 export function getDlqTopic(originalTopic: string): string {
   return `${originalTopic}${RETRY_CONFIG.dlqSuffix}`;
 }
+
+/**
+ * Returns all retry topics for an original topic.
+ * Example:  orders →
+ * [ 'orders.retry.1m',
+ *   'orders.retry.5m',
+ *   'orders.retry.10m' ]
+ */
+export function getRetryTopics(originalTopic: string): string[] {
+  return Array.from({ length: RETRY_CONFIG.maxRetries }, (_, index) =>
+    getRetryTopic(originalTopic, index + 1),
+  );
+}
