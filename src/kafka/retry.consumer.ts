@@ -48,7 +48,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
     // Expand each original topic into its tiered retry topics
     // (e.g. orders → orders.retry.1m, orders.retry.5m, orders.retry.10m).
     const retryTopics = originalTopics.flatMap((topic) =>
-      getRetryTopics(topic),
+      getRetryTopics(this.configService, topic),
     );
 
     await this.consumer.subscribe({
@@ -74,7 +74,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
         const maxRetriesHeader = message.headers?.max_retries?.toString();
 
         const maxRetries = Number(
-          maxRetriesHeader ?? getMaxRetries().toString(),
+          maxRetriesHeader ?? getMaxRetries(this.configService).toString(),
         );
 
         const originalTopic =

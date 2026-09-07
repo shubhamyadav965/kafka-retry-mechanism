@@ -1,4 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { Consumer, Kafka } from 'kafkajs';
 
@@ -11,12 +12,13 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
   // Kafka client used by this consumer.
   private readonly kafka: Kafka;
 
-  // Consumer reads messages from the orders topic.
+  // Consumer reads messages from all configured original topics.
   private readonly consumer: Consumer;
 
   constructor(
     private readonly kafkaService: KafkaService,
     private readonly orderProcessor: OrderProcessor,
+    private readonly configService: ConfigService,
   ) {
     this.kafka = new Kafka({
       // Identifier for this Kafka client.
@@ -37,9 +39,17 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
     // Connect the consumer to Kafka.
     await this.consumer.connect();
 
-    // Subscribe this consumer to the main orders topic.
+    // Which original topics this consumer should handle, per config.
+    const originalTopics =
+      this.configService
+        .get<string>('KAFKA_ORIGINAL_TOPICS')
+        ?.split(',')
+        .map((topic) => topic.trim())
+        .filter(Boolean) ?? [];
+
+    // Subscribe this consumer to every configured original topic.
     await this.consumer.subscribe({
-      topic: 'orders',
+      topics: originalTopics,
 
       // Start from the beginning when this consumer group
       // does not already have a committed offset.
@@ -49,12 +59,12 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
     await this.consumer.run({
       // eachMessage is called whenever Kafka delivers
       // a message to this consumer.
-      eachMessage: async ({ message }) => {
+      eachMessage: async ({ topic, message }) => {
         // Kafka message values arrive as Buffers.
         // Convert the value into a string.
         const value = message.value?.toString();
 
-        console.log('Received message:', value);
+        console.log(`Received message on ${topic}:`, value);
 
         try {
           // Business logic is kept outside the consumer.
@@ -70,7 +80,8 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
           await this.kafkaService.sendToRetryTopic(
             value ?? '',
             retryCount,
-            getRetryTopic('orders', retryCount),
+            getRetryTopic(this.configService, topic, retryCount),
+            topic,
           );
         }
       },

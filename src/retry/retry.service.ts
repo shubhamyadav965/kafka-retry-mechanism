@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { getRetryDelay, getRetryTopic } from '../config/retry-policy';
 import { RedisService } from '../redis/redis.service';
@@ -6,7 +7,10 @@ import { RetryJob } from '../redis/retry-job';
 
 @Injectable()
 export class RetryService {
-  constructor(private readonly redisService: RedisService) {}
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * Schedule the next retry attempt.
@@ -19,11 +23,15 @@ export class RetryService {
     retryCount: number,
     originalTopic: string,
   ): Promise<void> {
-    // Find the Kafka topic for this retry attempt.
-    const retryTopic = getRetryTopic(originalTopic, retryCount);
+    // Determine which retry topic should receive this attempt.
+    const retryTopic = getRetryTopic(
+      this.configService,
+      originalTopic,
+      retryCount,
+    );
 
-    // Find how long we should wait before executing this retry.
-    const retryDelay = getRetryDelay(retryCount);
+    // Determine how long this retry should wait.
+    const retryDelay = getRetryDelay(this.configService, retryCount);
 
     // Calculate the exact time when the retry becomes eligible.
     const scheduledRetryAt = new Date(Date.now() + retryDelay).toISOString();

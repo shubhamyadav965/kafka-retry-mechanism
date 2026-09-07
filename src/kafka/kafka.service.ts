@@ -76,8 +76,9 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
     value: string,
     retryCount: number,
     retryTopic: string,
+    originalTopic: string,
   ) {
-    const retryDelay = getRetryDelay(retryCount);
+    const retryDelay = getRetryDelay(this.configService, retryCount);
     const scheduledRetryAt = new Date(Date.now() + retryDelay).toISOString();
 
     await this.producer.send({
@@ -87,8 +88,8 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
           value,
           headers: {
             retry_count: retryCount.toString(),
-            max_retries: getMaxRetries().toString(),
-            original_topic: 'orders',
+            max_retries: getMaxRetries(this.configService).toString(),
+            original_topic: originalTopic,
             scheduled_retry_at: scheduledRetryAt,
           },
         },
@@ -107,7 +108,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
           // Restore retry metadata as Kafka headers.
           headers: {
             retry_count: job.retryCount.toString(),
-            max_retries: getMaxRetries().toString(),
+            max_retries: getMaxRetries(this.configService).toString(),
             original_topic: job.originalTopic,
             scheduled_retry_at: job.scheduledRetryAt,
           },
@@ -127,7 +128,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
     originalTopic: string,
   ) {
     await this.producer.send({
-      topic: getDlqTopic(originalTopic),
+      topic: getDlqTopic(this.configService, originalTopic),
       messages: [
         {
           value,

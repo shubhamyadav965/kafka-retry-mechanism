@@ -1,6 +1,18 @@
 import { ConfigService } from '@nestjs/config';
 
-export function getRetryConfig(configService: ConfigService) {
+export interface RetryConfig {
+  maxRetries: number;
+  retryDelays: number[];
+  dlqSuffix: string;
+}
+
+/**
+ * Reads retry-related configuration from environment variables.
+ *
+ * Environment variables are strings, so this function converts
+ * them into the correct types used by the application.
+ */
+export function getRetryConfig(configService: ConfigService): RetryConfig {
   const maxRetries = Number(configService.get<string>('MAX_RETRIES') ?? '3');
 
   const retryDelays =

@@ -1,63 +1,81 @@
-export const RETRY_CONFIG = {
-  maxRetries: 3,
+import { ConfigService } from '@nestjs/config';
+import { getRetryConfig } from './retry.config';
 
-  retryDelays: [
-    60_000, // Retry 1: 1 minute
-    5 * 60_000, // Retry 2: 5 minutes
-    10 * 60_000, // Retry 3: 10 minutes
-  ],
+/**
+ * Returns the configured retry delay for a retry attempt.
+ *
+ * retryCount starts at 1.
+ *
+ * Example:
+ * retry 1 → 1 minute
+ * retry 2 → 5 minutes
+ * retry 3 → 10 minutes
+ */
+export function getRetryDelay(
+  configService: ConfigService,
+  retryCount: number,
+): number {
+  const config = getRetryConfig(configService);
 
-  dlqSuffix: '.dlq',
-};
-
-// Returns the delay for a particular retry attempt.
-
-export function getRetryDelay(retryCount: number): number {
-  return RETRY_CONFIG.retryDelays[retryCount - 1];
+  return config.retryDelays[retryCount - 1];
 }
 
 /**
  * Returns the maximum number of retry attempts.
  */
-export function getMaxRetries(): number {
-  return RETRY_CONFIG.maxRetries;
+export function getMaxRetries(configService: ConfigService): number {
+  const config = getRetryConfig(configService);
+
+  return config.maxRetries;
 }
 
 /**
- * Creates the retry topic name for a given original topic.
+ * Creates the retry topic for a retry attempt.
  *
  * Example:
+ *
  * orders + retry 1 → orders.retry.1m
  * orders + retry 2 → orders.retry.5m
  * orders + retry 3 → orders.retry.10m
  */
 export function getRetryTopic(
+  configService: ConfigService,
   originalTopic: string,
   retryCount: number,
 ): string {
-  const retryDelay = getRetryDelay(retryCount);
+  const retryDelay = getRetryDelay(configService, retryCount);
 
   const delayInMinutes = Math.floor(retryDelay / 60_000);
+
   return `${originalTopic}.retry.${delayInMinutes}m`;
 }
 
 /**
- * Creates the DLQ topic name from the original topic.
- * Example: orders → orders.dlq
+ * Returns the DLQ topic for the original topic.
+ *
+ * Example:
+ *
+ * orders → orders.dlq
  */
-export function getDlqTopic(originalTopic: string): string {
-  return `${originalTopic}${RETRY_CONFIG.dlqSuffix}`;
+export function getDlqTopic(
+  configService: ConfigService,
+  originalTopic: string,
+): string {
+  const config = getRetryConfig(configService);
+
+  return `${originalTopic}${config.dlqSuffix}`;
 }
 
 /**
  * Returns all retry topics for an original topic.
- * Example:  orders →
- * [ 'orders.retry.1m',
- *   'orders.retry.5m',
- *   'orders.retry.10m' ]
  */
-export function getRetryTopics(originalTopic: string): string[] {
-  return Array.from({ length: RETRY_CONFIG.maxRetries }, (_, index) =>
-    getRetryTopic(originalTopic, index + 1),
+export function getRetryTopics(
+  configService: ConfigService,
+  originalTopic: string,
+): string[] {
+  const maxRetries = getMaxRetries(configService);
+
+  return Array.from({ length: maxRetries }, (_, index) =>
+    getRetryTopic(configService, originalTopic, index + 1),
   );
 }
