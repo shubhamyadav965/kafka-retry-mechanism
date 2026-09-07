@@ -1,4 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Kafka, Producer } from 'kafkajs';
 import {
   getRetryDelay,
@@ -15,13 +16,18 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
   // Producer is responsible for publishing messages to Kafka topics.
   private readonly producer: Producer;
 
-  constructor() {
+  constructor(private readonly configService: ConfigService) {
+    const brokers =
+      this.configService
+        .get<string>('KAFKA_BROKERS')
+        ?.split(',')
+        .map((broker) => broker.trim()) ?? [];
+
     this.kafka = new Kafka({
       // Identifies this application when communicating with Kafka.
       clientId: 'kafka-retry-framework',
 
-      // Kafka broker exposed on localhost by Docker.
-      brokers: ['kafka:9093'],
+      brokers,
     });
 
     // Create the Kafka producer.

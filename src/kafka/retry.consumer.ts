@@ -1,4 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Consumer, Kafka } from 'kafkajs';
 import { OrderProcessor } from '../orders/order.processor';
 import { KafkaService } from './kafka.service';
@@ -18,6 +19,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
     private readonly orderProcessor: OrderProcessor,
     private readonly kafkaService: KafkaService,
     private readonly retryService: RetryService,
+    private readonly configService: ConfigService,
   ) {
     this.kafka = new Kafka({
       clientId: 'order-retry-consumer',
@@ -35,10 +37,22 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
     // Connect retry consumer to Kafka.
     await this.consumer.connect();
 
-    // Listen to messages across all tiered retry topics
-    // (orders.retry.1m, orders.retry.5m, orders.retry.10m).
+    // Which original topics have retry-enabled producers, per config.
+    const originalTopics =
+      this.configService
+        .get<string>('KAFKA_ORIGINAL_TOPICS')
+        ?.split(',')
+        .map((topic) => topic.trim())
+        .filter(Boolean) ?? [];
+
+    // Expand each original topic into its tiered retry topics
+    // (e.g. orders → orders.retry.1m, orders.retry.5m, orders.retry.10m).
+    const retryTopics = originalTopics.flatMap((topic) =>
+      getRetryTopics(topic),
+    );
+
     await this.consumer.subscribe({
-      topics: getRetryTopics('orders'),
+      topics: retryTopics,
 
       // Useful during development so we can replay
       // messages already present in the topic.

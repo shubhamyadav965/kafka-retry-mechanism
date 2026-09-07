@@ -1,20 +1,22 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { RetryJob } from './retry-job';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
-  // Create a Redis client.
-  // NestJS and Redis are both running inside Docker Compose.
-  // "redis" is the Docker Compose service name.
-  private readonly redis = new Redis({
-    host: 'redis',
-    port: 6379,
-  });
+  private readonly redis: Redis;
 
   // Redis Sorted Set where all scheduled retry jobs are stored. The score will be the retry timestamp.
   // The member will contain the retry job as JSON.
   private readonly retryQueue = 'retry:scheduled';
+
+  constructor(private readonly configService: ConfigService) {
+    this.redis = new Redis({
+      host: this.configService.get<string>('REDIS_HOST'),
+      port: this.configService.get<number>('REDIS_PORT'),
+    });
+  }
 
   // Add a retry job to Redis.
   // The score determines when the job becomes eligible.

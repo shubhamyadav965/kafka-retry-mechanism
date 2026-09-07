@@ -8,11 +8,17 @@ import { OrderProcessor } from './orders/order.processor';
 import { RetryScheduler } from './retry/retry.scheduler';
 import { RedisModule } from './redis/redis.module';
 import { RetryService } from './retry/retry.service';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   // RedisModule is a module (exports RedisService), so it belongs in
   // imports, not providers.
-  imports: [RedisModule],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    RedisModule,
+  ],
   controllers: [AppController],
   // Providers are classes managed by NestJS dependency injection.
   //
