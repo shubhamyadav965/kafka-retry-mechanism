@@ -34,6 +34,10 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
+    // Ensure required topics exist before subscribing, regardless
+    // of provider initialization order.
+    await this.kafkaService.initializeTopics();
+
     // Connect retry consumer to Kafka.
     await this.consumer.connect();
 

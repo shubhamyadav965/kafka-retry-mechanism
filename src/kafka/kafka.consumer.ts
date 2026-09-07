@@ -36,6 +36,10 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
+    // Ensure required topics exist before subscribing, regardless
+    // of provider initialization order.
+    await this.kafkaService.initializeTopics();
+
     // Connect the consumer to Kafka.
     await this.consumer.connect();
 
