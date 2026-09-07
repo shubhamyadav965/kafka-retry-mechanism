@@ -190,6 +190,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
           value: job.value,
           // Restore retry metadata as Kafka headers.
           headers: {
+            job_id: job.jobId,
             retry_count: job.retryCount.toString(),
             max_retries: getMaxRetries(this.configService).toString(),
             original_topic: job.originalTopic,

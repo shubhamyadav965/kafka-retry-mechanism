@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 
 import { getRetryDelay, getRetryTopic } from '../config/retry-policy';
 import { RedisService } from '../redis/redis.service';
@@ -38,6 +39,7 @@ export class RetryService {
 
     // Create the retry job that will be stored in Redis.
     const retryJob: RetryJob = {
+      jobId: randomUUID(),
       value,
       retryCount,
       retryTopic,

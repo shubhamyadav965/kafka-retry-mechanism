@@ -84,9 +84,14 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
         const originalTopic =
           message.headers?.original_topic?.toString() ?? 'unknown';
 
+        // Read the retry job's unique identity from Kafka headers.
+        const jobId = message.headers?.job_id?.toString();
+
         console.log(
           'Retry consumer received:',
           value,
+          'jobId:',
+          jobId,
           'offset:',
           message.offset,
         );

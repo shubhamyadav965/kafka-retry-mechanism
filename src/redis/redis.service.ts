@@ -20,26 +20,43 @@ export class RedisService implements OnModuleDestroy {
 
   // Add a retry job to Redis.
   // The score determines when the job becomes eligible.
+  // The ZSET member is just the jobId; the job payload itself is
+  // stored separately so ZSET members stay unique per job.
   async addRetryJob(job: RetryJob): Promise<void> {
     const score = new Date(job.scheduledRetryAt).getTime();
 
-    await this.redis.zadd(this.retryQueue, score, JSON.stringify(job));
+    await this.redis.set(`retry:job:${job.jobId}`, JSON.stringify(job));
+
+    await this.redis.zadd(this.retryQueue, score, job.jobId);
   }
 
   // Get retry jobs whose scheduled time has arrived. -inf means "no lower limit". Date.now() means "up to right now".
   async getDueRetryJobs(): Promise<RetryJob[]> {
-    const jobs = await this.redis.zrangebyscore(
+    const jobIds = await this.redis.zrangebyscore(
       this.retryQueue,
       '-inf',
       Date.now(),
     );
 
-    return jobs.map((job) => JSON.parse(job) as RetryJob);
+    if (jobIds.length === 0) {
+      return [];
+    }
+
+    // Fetch all job payloads together instead of one request per job.
+    const jobs = await this.redis.mget(
+      ...jobIds.map((jobId) => `retry:job:${jobId}`),
+    );
+
+    return jobs
+      .filter((job): job is string => job !== null)
+      .map((job) => JSON.parse(job) as RetryJob);
   }
 
   // Remove a retry job after it has been successfully published back to Kafka.
   async removeRetryJob(job: RetryJob): Promise<void> {
-    await this.redis.zrem(this.retryQueue, JSON.stringify(job));
+    await this.redis.zrem(this.retryQueue, job.jobId);
+
+    await this.redis.del(`retry:job:${job.jobId}`);
   }
 
   // Close the Redis connection when NestJS shuts down.

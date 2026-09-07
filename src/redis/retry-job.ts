@@ -1,4 +1,7 @@
 export interface RetryJob {
+  // Unique identity for this retry job.
+  jobId: string;
+
   // The original Kafka message payload.
   value: string;
 
