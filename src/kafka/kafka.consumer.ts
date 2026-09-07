@@ -70,7 +70,7 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
           await this.kafkaService.sendToRetryTopic(
             value ?? '',
             retryCount,
-            getRetryTopic(retryCount),
+            getRetryTopic('orders', retryCount),
           );
         }
       },

@@ -3,7 +3,7 @@ import { Consumer, Kafka } from 'kafkajs';
 import { OrderProcessor } from '../orders/order.processor';
 import { KafkaService } from './kafka.service';
 import { RetryService } from '../retry/retry.service';
-import { getMaxRetries, RETRY_CONFIG } from '../config/retry-policy';
+import { getMaxRetries, getRetryTopic } from '../config/retry-policy';
 
 @Injectable()
 export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
@@ -37,8 +37,12 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
 
     // Listen to messages across all tiered retry topics
     // (orders.retry.1m, orders.retry.5m, orders.retry.10m).
+    const retryTopics = Array.from({ length: getMaxRetries() }, (_, i) =>
+      getRetryTopic('orders', i + 1),
+    );
+
     await this.consumer.subscribe({
-      topics: RETRY_CONFIG.retryTopics,
+      topics: retryTopics,
 
       // Useful during development so we can replay
       // messages already present in the topic.

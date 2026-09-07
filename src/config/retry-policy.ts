@@ -2,9 +2,9 @@ export const RETRY_CONFIG = {
   maxRetries: 3,
 
   retryDelays: [
-    60_000,       // Retry 1: 1 minute
-    5 * 60_000,   // Retry 2: 5 minutes
-    10 * 60_000,  // Retry 3: 10 minutes
+    60_000, // Retry 1: 1 minute
+    5 * 60_000, // Retry 2: 5 minutes
+    10 * 60_000, // Retry 3: 10 minutes
   ],
 
   dlqSuffix: '.dlq',
@@ -37,9 +37,7 @@ export function getRetryTopic(
 ): string {
   const retryDelay = getRetryDelay(retryCount);
 
-  const delayInMinutes = Math.floor(
-    retryDelay / 60_000,
-  );
+  const delayInMinutes = Math.floor(retryDelay / 60_000);
   return `${originalTopic}.retry.${delayInMinutes}m`;
 }
 

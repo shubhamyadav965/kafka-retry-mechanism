@@ -20,13 +20,10 @@ export class RetryService {
     originalTopic: string,
   ): Promise<void> {
     // Find the Kafka topic for this retry attempt.
-    const retryTopic = getRetryTopic(retryCount);
+    const retryTopic = getRetryTopic(originalTopic, retryCount);
 
     // Find how long we should wait before executing this retry.
-    const retryTopic = getRetryTopic(
-        originalTopic,
-        retryCount,
-      );
+    const retryDelay = getRetryDelay(retryCount);
 
     // Calculate the exact time when the retry becomes eligible.
     const scheduledRetryAt = new Date(Date.now() + retryDelay).toISOString();
