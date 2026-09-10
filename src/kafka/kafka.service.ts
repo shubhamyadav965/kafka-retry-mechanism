@@ -1,11 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Admin, Kafka, Producer } from 'kafkajs';
-import {
-  getRetryDelay,
-  getMaxRetries,
-  getDlqTopic,
-} from '../config/retry-policy';
+import { getMaxRetries, getDlqTopic } from '../config/retry-policy';
 import { getRequiredTopics } from '../config/kafka-topics';
 import { RetryJob } from '../redis/retry-job';
 
@@ -149,37 +145,6 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * Publish a failed message to the retry topic.
-   *
-   * We don't physically move the original Kafka message.
-   * Instead, we create a new Kafka message in orders.retry.
-   */
-  async sendToRetryTopic(
-    value: string,
-    retryCount: number,
-    retryTopic: string,
-    originalTopic: string,
-  ) {
-    const retryDelay = getRetryDelay(this.configService, retryCount);
-    const scheduledRetryAt = new Date(Date.now() + retryDelay).toISOString();
-
-    await this.producer.send({
-      topic: retryTopic,
-      messages: [
-        {
-          value,
-          headers: {
-            retry_count: retryCount.toString(),
-            max_retries: getMaxRetries(this.configService).toString(),
-            original_topic: originalTopic,
-            scheduled_retry_at: scheduledRetryAt,
-          },
-        },
-      ],
-    });
-  }
-
   //Publish a scheduled retry job back to Kafka. The RetryScheduler calls this method when the retry becomes due in Redis.
   async publishRetryJob(job: RetryJob): Promise<void> {
     await this.producer.send({
@@ -191,6 +156,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
           // Restore retry metadata as Kafka headers.
           headers: {
             job_id: job.jobId,
+            event_id: job.eventId,
             retry_count: job.retryCount.toString(),
             max_retries: getMaxRetries(this.configService).toString(),
             original_topic: job.originalTopic,

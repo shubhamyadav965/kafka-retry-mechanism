@@ -23,6 +23,7 @@ export class RetryService {
     value: string,
     retryCount: number,
     originalTopic: string,
+    eventId: string,
   ): Promise<void> {
     // Determine which retry topic should receive this attempt.
     const retryTopic = getRetryTopic(
@@ -40,6 +41,7 @@ export class RetryService {
     // Create the retry job that will be stored in Redis.
     const retryJob: RetryJob = {
       jobId: randomUUID(),
+      eventId,
       value,
       retryCount,
       retryTopic,

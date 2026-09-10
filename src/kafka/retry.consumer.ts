@@ -87,11 +87,16 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
         // Read the retry job's unique identity from Kafka headers.
         const jobId = message.headers?.job_id?.toString();
 
+        // Read the original business event's stable identity.
+        const eventId = message.headers?.event_id?.toString();
+
         console.log(
           'Retry consumer received:',
           value,
           'jobId:',
           jobId,
+          'eventId:',
+          eventId,
           'offset:',
           message.offset,
         );
@@ -117,6 +122,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
               value ?? '',
               nextRetryCount,
               originalTopic,
+              eventId ?? '',
             );
 
             console.log('Retry job stored in Redis');

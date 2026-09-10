@@ -5,7 +5,7 @@ import { Consumer, Kafka } from 'kafkajs';
 
 import { KafkaService } from './kafka.service';
 import { OrderProcessor } from '../orders/order.processor';
-import { getRetryTopic } from '../config/retry-policy';
+import { RetryService } from '../retry/retry.service';
 
 @Injectable()
 export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
@@ -19,6 +19,7 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
     private readonly kafkaService: KafkaService,
     private readonly orderProcessor: OrderProcessor,
     private readonly configService: ConfigService,
+    private readonly retryService: RetryService,
   ) {
     this.kafka = new Kafka({
       // Identifier for this Kafka client.
@@ -68,7 +69,26 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
         // Convert the value into a string.
         const value = message.value?.toString();
 
-        console.log(`Received message on ${topic}:`, value);
+        let eventId: string | undefined;
+
+        try {
+          const event = JSON.parse(value ?? '{}') as { event_id?: string };
+          eventId = event.event_id;
+        } catch {
+          console.error('Invalid JSON message received');
+        }
+
+        if (!eventId) {
+          console.error('Message does not contain event_id');
+          return;
+        }
+
+        console.log(
+          `Received message on ${topic}:`,
+          value,
+          'eventId:',
+          eventId,
+        );
 
         try {
           // Business logic is kept outside the consumer.
@@ -81,11 +101,11 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
           // First failure from the main topic becomes retry #1.
           const retryCount = 1;
 
-          await this.kafkaService.sendToRetryTopic(
+          await this.retryService.scheduleRetry(
             value ?? '',
             retryCount,
-            getRetryTopic(this.configService, topic, retryCount),
             topic,
+            eventId,
           );
         }
       },

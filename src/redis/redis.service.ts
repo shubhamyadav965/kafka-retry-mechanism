@@ -11,6 +11,19 @@ export class RedisService implements OnModuleDestroy {
   // The member will contain the retry job as JSON.
   private readonly retryQueue = 'retry:scheduled';
 
+  // Prevents two consumers from processing the same event at the same time.
+  private readonly processingLockPrefix = 'idempotency:processing:';
+
+  // Stores events that have completed successfully.
+  private readonly processedEventPrefix = 'idempotency:processed:';
+
+  // How long a processing lock should remain alive.
+  // The lock automatically disappears if the application crashes.
+  private readonly processingLockTtlSeconds = 300;
+
+  // How long we remember that an event was successfully processed.
+  private readonly processedEventTtlSeconds = 86400;
+
   constructor(private readonly configService: ConfigService) {
     this.redis = new Redis({
       host: this.configService.get<string>('REDIS_HOST'),
@@ -57,6 +70,61 @@ export class RedisService implements OnModuleDestroy {
     await this.redis.zrem(this.retryQueue, job.jobId);
 
     await this.redis.del(`retry:job:${job.jobId}`);
+  }
+
+  /**
+   * Atomically claims an event for processing.
+   *
+   * NX means Redis creates the key only if it does not
+   * already exist.
+   *
+   * This prevents two consumers from processing the
+   * same event simultaneously.
+   */
+  async tryAcquireProcessingLock(eventId: string): Promise<boolean> {
+    const key = `${this.processingLockPrefix}${eventId}`;
+
+    const result = await this.redis.set(
+      key,
+      '1',
+      'EX',
+      this.processingLockTtlSeconds,
+      'NX',
+    );
+
+    return result === 'OK';
+  }
+
+  /**
+   * Checks whether an event has already completed successfully.
+   */
+  async isEventProcessed(eventId: string): Promise<boolean> {
+    const key = `${this.processedEventPrefix}${eventId}`;
+
+    const exists = await this.redis.exists(key);
+
+    return exists === 1;
+  }
+
+  /**
+   * Marks an event as successfully processed.
+   */
+  async markEventProcessed(eventId: string): Promise<void> {
+    const key = `${this.processedEventPrefix}${eventId}`;
+
+    await this.redis.set(key, '1', 'EX', this.processedEventTtlSeconds);
+  }
+
+  /**
+   * Releases the processing lock.
+   *
+   * This is important when processing fails so that
+   * a later retry can process the event again.
+   */
+  async releaseProcessingLock(eventId: string): Promise<void> {
+    const key = `${this.processingLockPrefix}${eventId}`;
+
+    await this.redis.del(key);
   }
 
   // Close the Redis connection when NestJS shuts down.
