@@ -85,8 +85,6 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
           // Remove the job only after Kafka publishing succeeds.
           await this.redisService.removeRetryJob(job);
 
-          await this.redisService.releaseRetryJobClaim(job.jobId);
-
           console.log(`Retry job ${job.jobId} published successfully`);
         } catch (error) {
           // Keep the job in Redis if Kafka publishing fails.
