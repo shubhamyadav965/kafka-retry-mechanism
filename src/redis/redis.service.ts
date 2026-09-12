@@ -24,6 +24,13 @@ export class RedisService implements OnModuleDestroy {
   // How long we remember that an event was successfully processed.
   private readonly processedEventTtlSeconds = 86400;
 
+  // Marks a retry job as owned by one application instance so that
+  // multiple schedulers do not publish the same job.
+  private readonly retryClaimPrefix = 'retry:claim:';
+
+  // Claims expire so a crashed instance cannot block a job forever.
+  private readonly retryClaimTtlSeconds = 30;
+
   constructor(private readonly configService: ConfigService) {
     this.redis = new Redis({
       host: this.configService.get<string>('REDIS_HOST'),
@@ -70,6 +77,40 @@ export class RedisService implements OnModuleDestroy {
     await this.redis.zrem(this.retryQueue, job.jobId);
 
     await this.redis.del(`retry:job:${job.jobId}`);
+  }
+
+  /**
+   * Attempts to claim a retry job for this application instance.
+   *
+   * NX makes the operation atomic:
+   * only the first scheduler that creates the key
+   * successfully owns the job.
+   */
+  async tryClaimRetryJob(jobId: string): Promise<boolean> {
+    const key = `${this.retryClaimPrefix}${jobId}`;
+
+    const result = await this.redis.set(
+      key,
+      '1',
+      'EX',
+      this.retryClaimTtlSeconds,
+      'NX',
+    );
+
+    return result === 'OK';
+  }
+
+  /**
+   * Releases a retry-job claim.
+   *
+   * Normally the job is removed from the retry queue
+   * after successful publishing, but releasing the claim
+   * explicitly also keeps the Redis state clean.
+   */
+  async releaseRetryJobClaim(jobId: string): Promise<void> {
+    const key = `${this.retryClaimPrefix}${jobId}`;
+
+    await this.redis.del(key);
   }
 
   /**

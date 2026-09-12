@@ -55,8 +55,10 @@ services:
 
   nest-app:
     build: .
+    # Host port range instead of a fixed port so the service can be
+    # scaled to multiple instances: docker compose up -d --build --scale nest-app=3
     ports:
-      - "3000:3000"
+      - "3000-3002:3000"
     depends_on:
       kafka:
         condition: service_healthy

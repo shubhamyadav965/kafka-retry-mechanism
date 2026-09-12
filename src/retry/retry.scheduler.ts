@@ -64,6 +64,19 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
 
       for (const job of jobs) {
         try {
+          // Atomically claim the job so that only one application
+          // instance publishes it. Other schedulers that saw the
+          // same due job will fail to claim it and move on.
+          const claimed = await this.redisService.tryClaimRetryJob(job.jobId);
+
+          if (!claimed) {
+            console.log(`Retry job ${job.jobId} is already claimed. Skipping.`);
+
+            continue;
+          }
+
+          console.log(`Claimed retry job ${job.jobId}`);
+
           console.log(`Publishing retry job to ${job.retryTopic}`);
 
           // Publish the retry job to Kafka.
@@ -72,11 +85,14 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
           // Remove the job only after Kafka publishing succeeds.
           await this.redisService.removeRetryJob(job);
 
-          console.log('Retry job published successfully');
+          await this.redisService.releaseRetryJobClaim(job.jobId);
+
+          console.log(`Retry job ${job.jobId} published successfully`);
         } catch (error) {
           // Keep the job in Redis if Kafka publishing fails.
-          // The next scheduler cycle will try again.
-          console.error('Failed to publish retry job:', error);
+          // The claim expires on its own (TTL), so another instance
+          // can pick the job up on a later cycle.
+          console.error(`Failed to publish retry job ${job.jobId}:`, error);
         }
       }
     } finally {
