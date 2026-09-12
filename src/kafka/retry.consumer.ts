@@ -5,6 +5,7 @@ import { OrderProcessor } from '../orders/order.processor';
 import { KafkaService } from './kafka.service';
 import { RetryService } from '../retry/retry.service';
 import { getMaxRetries, getRetryTopics } from '../config/retry-policy';
+import { IdempotencyService } from '../idempotency/idempotency.service';
 
 @Injectable()
 export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
@@ -20,6 +21,7 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
     private readonly kafkaService: KafkaService,
     private readonly retryService: RetryService,
     private readonly configService: ConfigService,
+    private readonly idempotencyService: IdempotencyService,
   ) {
     this.kafka = new Kafka({
       clientId: 'order-retry-consumer',
@@ -104,8 +106,25 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
         console.log('Retry count:', retryCount, 'Max retries:', maxRetries);
 
         try {
-          // Try processing the failed message again.
-          await this.orderProcessor.process(value ?? '');
+          if (!eventId) {
+            throw new Error('Retry message is missing event_id');
+          }
+
+          // Try processing the failed message again, guarded so the
+          // handler runs at most once per eventId even if Kafka
+          // redelivers this retry message.
+          const processed = await this.idempotencyService.process(
+            eventId,
+            async () => {
+              await this.orderProcessor.process(value ?? '');
+            },
+          );
+
+          if (!processed) {
+            console.log(`Skipping duplicate retry event: ${eventId}`);
+
+            return;
+          }
 
           console.log('Retry processing succeeded');
         } catch (error) {

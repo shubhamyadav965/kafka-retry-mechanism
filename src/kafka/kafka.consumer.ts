@@ -6,6 +6,7 @@ import { Consumer, Kafka } from 'kafkajs';
 import { KafkaService } from './kafka.service';
 import { OrderProcessor } from '../orders/order.processor';
 import { RetryService } from '../retry/retry.service';
+import { IdempotencyService } from '../idempotency/idempotency.service';
 
 @Injectable()
 export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
@@ -20,6 +21,7 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
     private readonly orderProcessor: OrderProcessor,
     private readonly configService: ConfigService,
     private readonly retryService: RetryService,
+    private readonly idempotencyService: IdempotencyService,
   ) {
     this.kafka = new Kafka({
       // Identifier for this Kafka client.
@@ -94,7 +96,23 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
           // Business logic is kept outside the consumer.
           // This makes the same processor reusable by
           // both the main and retry consumers.
-          await this.orderProcessor.process(value ?? '');
+          //
+          // IdempotencyService guarantees the handler runs at most
+          // once per eventId, even if Kafka redelivers the message.
+          const processed = await this.idempotencyService.process(
+            eventId,
+            async () => {
+              await this.orderProcessor.process(value ?? '');
+            },
+          );
+
+          if (!processed) {
+            console.log(`Skipping duplicate event: ${eventId}`);
+
+            return;
+          }
+
+          console.log(`Event ${eventId} processed successfully`);
         } catch {
           console.log('Processing failed. Sending to retry topic...');
 

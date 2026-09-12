@@ -8,6 +8,7 @@ import { OrderProcessor } from './orders/order.processor';
 import { RetryScheduler } from './retry/retry.scheduler';
 import { RedisModule } from './redis/redis.module';
 import { RetryService } from './retry/retry.service';
+import { IdempotencyModule } from './idempotency/idempotency.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -18,6 +19,7 @@ import { ConfigModule } from '@nestjs/config';
       isGlobal: true,
     }),
     RedisModule,
+    IdempotencyModule,
   ],
   controllers: [AppController],
   // Providers are classes managed by NestJS dependency injection.
