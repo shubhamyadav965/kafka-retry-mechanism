@@ -19,9 +19,11 @@ export function getRequiredTopics(configService: ConfigService): string[] {
       .map((topic) => topic.trim())
       .filter(Boolean) ?? [];
 
-  return originalTopics.flatMap((topic) => [
+  const topics = originalTopics.flatMap((topic) => [
     topic,
     ...getRetryTopics(configService, topic),
     getDlqTopic(configService, topic),
   ]);
+
+  return [...new Set(topics)];
 }

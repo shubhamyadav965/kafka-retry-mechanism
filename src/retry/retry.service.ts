@@ -5,12 +5,14 @@ import { randomUUID } from 'crypto';
 import { getRetryDelay, getRetryTopic } from '../config/retry-policy';
 import { RedisService } from '../redis/redis.service';
 import { RetryJob } from '../redis/retry-job';
+import { AppLogger } from '../common/logger/app.logger';
 
 @Injectable()
 export class RetryService {
   constructor(
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
+    private readonly logger: AppLogger,
   ) {}
 
   /**
@@ -49,7 +51,25 @@ export class RetryService {
       scheduledRetryAt,
     };
 
-    // Store the job in Redis.
-    await this.redisService.addRetryJob(retryJob);
+    try {
+      // Store the job in Redis.
+      await this.redisService.addRetryJob(retryJob);
+
+      this.logger.info('retry_job_created', {
+        jobId: retryJob.jobId,
+        eventId: retryJob.eventId,
+        retryCount: retryJob.retryCount,
+        retryTopic: retryJob.retryTopic,
+        scheduledRetryAt: retryJob.scheduledRetryAt,
+      });
+    } catch (error) {
+      this.logger.error('retry_job_creation_failed', {
+        eventId,
+        retryCount,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw error;
+    }
   }
 }

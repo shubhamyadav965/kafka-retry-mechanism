@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 
 import { KafkaService } from '../kafka/kafka.service';
 import { RedisService } from '../redis/redis.service';
+import { AppLogger } from '../common/logger/app.logger';
 
 @Injectable()
 export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
@@ -15,10 +16,11 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly redisService: RedisService,
     private readonly kafkaService: KafkaService,
+    private readonly logger: AppLogger,
   ) {}
 
   async onModuleInit() {
-    console.log('Retry scheduler started');
+    this.logger.info('retry_scheduler_started');
 
     // Check for due retry jobs immediately when
     // the application starts.
@@ -36,7 +38,7 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
       clearInterval(this.interval);
     }
 
-    console.log('Retry scheduler stopped');
+    this.logger.info('retry_scheduler_stopped');
   }
 
   /**
@@ -60,7 +62,7 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      console.log(`Found ${jobs.length} due retry job(s)`);
+      this.logger.info('retry_jobs_found', { count: jobs.length });
 
       for (const job of jobs) {
         try {
@@ -70,14 +72,20 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
           const claimed = await this.redisService.tryClaimRetryJob(job.jobId);
 
           if (!claimed) {
-            console.log(`Retry job ${job.jobId} is already claimed. Skipping.`);
+            this.logger.info('retry_job_claim_failed', {
+              jobId: job.jobId,
+            });
 
             continue;
           }
 
-          console.log(`Claimed retry job ${job.jobId}`);
+          this.logger.info('retry_job_claimed', { jobId: job.jobId });
 
-          console.log(`Publishing retry job to ${job.retryTopic}`);
+          this.logger.info('retry_job_publishing', {
+            jobId: job.jobId,
+            retryTopic: job.retryTopic,
+            retryCount: job.retryCount,
+          });
 
           // Publish the retry job to Kafka.
           await this.kafkaService.publishRetryJob(job);
@@ -85,12 +93,19 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
           // Remove the job only after Kafka publishing succeeds.
           await this.redisService.removeRetryJob(job);
 
-          console.log(`Retry job ${job.jobId} published successfully`);
+          this.logger.info('retry_job_published', {
+            jobId: job.jobId,
+            retryTopic: job.retryTopic,
+          });
         } catch (error) {
           // Keep the job in Redis if Kafka publishing fails.
           // The claim expires on its own (TTL), so another instance
           // can pick the job up on a later cycle.
-          console.error(`Failed to publish retry job ${job.jobId}:`, error);
+          this.logger.error('retry_job_publish_failed', {
+            jobId: job.jobId,
+            retryTopic: job.retryTopic,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
     } finally {

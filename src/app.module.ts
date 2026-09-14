@@ -9,6 +9,8 @@ import { RetryScheduler } from './retry/retry.scheduler';
 import { RedisModule } from './redis/redis.module';
 import { RetryService } from './retry/retry.service';
 import { IdempotencyModule } from './idempotency/idempotency.module';
+import { LoggerModule } from './common/logger/logger.module';
+import { MetricsModule } from './common/metrics/metrics.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -20,6 +22,8 @@ import { ConfigModule } from '@nestjs/config';
     }),
     RedisModule,
     IdempotencyModule,
+    LoggerModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   // Providers are classes managed by NestJS dependency injection.

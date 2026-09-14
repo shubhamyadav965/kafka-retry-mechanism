@@ -7,6 +7,8 @@ import { KafkaService } from './kafka.service';
 import { OrderProcessor } from '../orders/order.processor';
 import { RetryService } from '../retry/retry.service';
 import { IdempotencyService } from '../idempotency/idempotency.service';
+import { AppLogger } from '../common/logger/app.logger';
+import { MetricsService } from '../common/metrics/metrics.service';
 
 @Injectable()
 export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
@@ -22,6 +24,8 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly retryService: RetryService,
     private readonly idempotencyService: IdempotencyService,
+    private readonly logger: AppLogger,
+    private readonly metricsService: MetricsService,
   ) {
     this.kafka = new Kafka({
       // Identifier for this Kafka client.
@@ -77,20 +81,24 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
           const event = JSON.parse(value ?? '{}') as { event_id?: string };
           eventId = event.event_id;
         } catch {
-          console.error('Invalid JSON message received');
+          this.logger.error('invalid_json_message', {
+            topic,
+          });
         }
 
         if (!eventId) {
-          console.error('Message does not contain event_id');
+          this.logger.error('message_missing_event_id', {
+            topic,
+          });
           return;
         }
 
-        console.log(
-          `Received message on ${topic}:`,
-          value,
-          'eventId:',
+        this.logger.info('message_received', {
+          topic,
           eventId,
-        );
+        });
+
+        this.metricsService.increment('messages_received');
 
         try {
           // Business logic is kept outside the consumer.
@@ -107,14 +115,29 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
           );
 
           if (!processed) {
-            console.log(`Skipping duplicate event: ${eventId}`);
+            this.logger.info('duplicate_event_skipped', {
+              topic,
+              eventId,
+            });
+
+            this.metricsService.increment('duplicate_events');
 
             return;
           }
 
-          console.log(`Event ${eventId} processed successfully`);
+          this.logger.info('event_processed_successfully', {
+            topic,
+            eventId,
+          });
+
+          this.metricsService.increment('messages_processed');
         } catch {
-          console.log('Processing failed. Sending to retry topic...');
+          this.logger.error('event_processing_failed', {
+            topic,
+            eventId,
+          });
+
+          this.metricsService.increment('messages_failed');
 
           // First failure from the main topic becomes retry #1.
           const retryCount = 1;
@@ -125,11 +148,21 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
             topic,
             eventId,
           );
+
+          this.metricsService.increment('retries_scheduled');
+
+          this.logger.info('retry_scheduled', {
+            topic,
+            eventId,
+            retryCount,
+          });
         }
       },
     });
 
-    console.log('Kafka consumer connected');
+    this.logger.info('kafka_consumer_connected', {
+      consumer: 'order-consumer',
+    });
   }
 
   async onModuleDestroy() {
@@ -137,6 +170,8 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
     // the Kafka connection when the application shuts down.
     await this.consumer.disconnect();
 
-    console.log('Kafka consumer disconnected');
+    this.logger.info('kafka_consumer_disconnected', {
+      consumer: 'order-consumer',
+    });
   }
 }

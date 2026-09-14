@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
+import { AppLogger } from '../common/logger/app.logger';
 
 @Injectable()
 export class IdempotencyService {
-  constructor(private readonly redisService: RedisService) {}
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly logger: AppLogger,
+  ) {}
 
   /**
    * Executes business logic only when this event
@@ -23,7 +27,9 @@ export class IdempotencyService {
     const alreadyProcessed = await this.redisService.isEventProcessed(eventId);
 
     if (alreadyProcessed) {
-      console.log(`Event ${eventId} already processed. Skipping.`);
+      this.logger.info('duplicate_event_skipped', {
+        eventId,
+      });
 
       return false;
     }
@@ -33,7 +39,9 @@ export class IdempotencyService {
       await this.redisService.tryAcquireProcessingLock(eventId);
 
     if (!lockAcquired) {
-      console.log(`Event ${eventId} is already being processed. Skipping.`);
+      this.logger.info('event_processing_lock_not_acquired', {
+        eventId,
+      });
 
       return false;
     }
@@ -45,7 +53,9 @@ export class IdempotencyService {
       // Mark the event only after successful processing.
       await this.redisService.markEventProcessed(eventId);
 
-      console.log(`Event ${eventId} marked as processed.`);
+      this.logger.info('event_marked_processed', {
+        eventId,
+      });
 
       return true;
     } finally {

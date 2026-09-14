@@ -6,6 +6,8 @@ import { KafkaService } from './kafka.service';
 import { RetryService } from '../retry/retry.service';
 import { getMaxRetries, getRetryTopics } from '../config/retry-policy';
 import { IdempotencyService } from '../idempotency/idempotency.service';
+import { AppLogger } from '../common/logger/app.logger';
+import { MetricsService } from '../common/metrics/metrics.service';
 
 @Injectable()
 export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
@@ -22,6 +24,8 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
     private readonly retryService: RetryService,
     private readonly configService: ConfigService,
     private readonly idempotencyService: IdempotencyService,
+    private readonly logger: AppLogger,
+    private readonly metricsService: MetricsService,
   ) {
     this.kafka = new Kafka({
       clientId: 'order-retry-consumer',
@@ -92,18 +96,28 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
         // Read the original business event's stable identity.
         const eventId = message.headers?.event_id?.toString();
 
-        console.log(
-          'Retry consumer received:',
-          value,
-          'jobId:',
+        this.logger.info('retry_message_received', {
           jobId,
-          'eventId:',
           eventId,
-          'offset:',
-          message.offset,
-        );
+          retryCount,
+          maxRetries,
+          originalTopic,
+          offset: message.offset,
+        });
 
-        console.log('Retry count:', retryCount, 'Max retries:', maxRetries);
+        this.metricsService.increment('retries_processed');
+
+        const scheduledRetryAt =
+          message.headers?.scheduled_retry_at?.toString();
+
+        if (scheduledRetryAt) {
+          const scheduledTime = new Date(scheduledRetryAt).getTime();
+          const latencyMs = Date.now() - scheduledTime;
+
+          if (latencyMs >= 0) {
+            this.metricsService.recordRetryLatency(latencyMs);
+          }
+        }
 
         try {
           if (!eventId) {
@@ -121,21 +135,42 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
           );
 
           if (!processed) {
-            console.log(`Skipping duplicate retry event: ${eventId}`);
+            this.logger.info('duplicate_retry_event_skipped', {
+              jobId,
+              eventId,
+              retryCount,
+            });
+
+            this.metricsService.increment('duplicate_events');
 
             return;
           }
 
-          console.log('Retry processing succeeded');
+          this.logger.info('retry_processing_succeeded', {
+            jobId,
+            eventId,
+            retryCount,
+          });
         } catch (error) {
-          console.log('Retry processing failed');
+          this.logger.error('retry_processing_failed', {
+            jobId,
+            eventId,
+            retryCount,
+            maxRetries,
+          });
 
           // If we have not reached the maximum retry count,
           // create another retry message.
           if (retryCount < maxRetries) {
             const nextRetryCount = retryCount + 1;
 
-            console.log(`Scheduling retry ${nextRetryCount}`);
+            this.logger.info('retry_scheduling_next_attempt', {
+              jobId,
+              eventId,
+              currentRetryCount: retryCount,
+              nextRetryCount,
+              maxRetries,
+            });
 
             await this.retryService.scheduleRetry(
               value ?? '',
@@ -144,11 +179,24 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
               eventId ?? '',
             );
 
-            console.log('Retry job stored in Redis');
+            this.metricsService.increment('retries_scheduled');
+
+            this.logger.info('retry_job_scheduled', {
+              jobId,
+              eventId,
+              retryCount: nextRetryCount,
+              originalTopic,
+            });
           } else {
             // Maximum retries have been exhausted.
             // Send the message to the Dead Letter Queue.
-            console.log('Maximum retries reached. Sending to DLQ.');
+            this.logger.error('maximum_retries_reached', {
+              jobId,
+              eventId,
+              retryCount,
+              maxRetries,
+              originalTopic,
+            });
 
             await this.kafkaService.sendToDlq(
               value ?? '',
@@ -156,18 +204,24 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
               error instanceof Error ? error.message : 'Unknown error',
               originalTopic,
             );
+
+            this.metricsService.increment('dlq_messages');
           }
         }
       },
     });
 
-    console.log('Retry consumer connected');
+    this.logger.info('retry_consumer_connected', {
+      consumer: 'order-retry-consumer',
+    });
   }
 
   async onModuleDestroy() {
     // Gracefully disconnect from Kafka when NestJS shuts down.
     await this.consumer.disconnect();
 
-    console.log('Retry consumer disconnected');
+    this.logger.info('retry_consumer_disconnected', {
+      consumer: 'order-retry-consumer',
+    });
   }
 }
