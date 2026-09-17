@@ -23,6 +23,9 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
   // await the same operation instead of starting another one.
   private topicsInitializationPromise?: Promise<void>;
 
+  // Backs the health endpoint's Kafka check.
+  private producerConnected = false;
+
   constructor(private readonly configService: ConfigService) {
     const brokers =
       this.configService
@@ -49,6 +52,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
 
     // Establish connection with Kafka when NestJS starts.
     await this.producer.connect();
+    this.producerConnected = true;
 
     console.log('Kafka producer connected');
   }
@@ -56,8 +60,15 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy() {
     // Gracefully close the Kafka connection when NestJS shuts down.
     await this.producer.disconnect();
+    this.producerConnected = false;
 
     console.log('Kafka producer disconnected');
+  }
+
+  // Backs the health endpoint; true once onModuleInit's connect()
+  // resolves, false after onModuleDestroy disconnects.
+  isProducerConnected(): boolean {
+    return this.producerConnected;
   }
 
   /**

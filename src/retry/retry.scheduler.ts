@@ -1,4 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { KafkaService } from '../kafka/kafka.service';
 import { RedisService } from '../redis/redis.service';
@@ -17,6 +18,7 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
     private readonly redisService: RedisService,
     private readonly kafkaService: KafkaService,
     private readonly logger: AppLogger,
+    private readonly configService: ConfigService,
   ) {}
 
   async onModuleInit() {
@@ -26,10 +28,14 @@ export class RetryScheduler implements OnModuleInit, OnModuleDestroy {
     // the application starts.
     await this.processDueRetries();
 
-    // Check Redis every second.
+    const intervalMs = Number(
+      this.configService.get<string>('RETRY_SCHEDULER_INTERVAL_MS') ?? '1000',
+    );
+
+    // Check Redis on the configured interval (defaults to every second).
     this.interval = setInterval(() => {
       void this.processDueRetries();
-    }, 1000);
+    }, intervalMs);
   }
 
   onModuleDestroy() {

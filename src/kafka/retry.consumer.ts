@@ -4,7 +4,7 @@ import { Consumer, Kafka } from 'kafkajs';
 import { OrderProcessor } from '../orders/order.processor';
 import { KafkaService } from './kafka.service';
 import { RetryService } from '../retry/retry.service';
-import { getMaxRetries, getRetryTopics } from '../config/retry-policy';
+import { getRetryTopics } from '../config/retry-policy';
 import { IdempotencyService } from '../idempotency/idempotency.service';
 import { AppLogger } from '../common/logger/app.logger';
 import { MetricsService } from '../common/metrics/metrics.service';
@@ -74,27 +74,56 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
         // Convert Kafka message value from Buffer to string.
         const value = message.value?.toString();
 
-        // Read retry_count from Kafka headers.
+        // Raw header reads. Every field here is written by our own
+        // KafkaService.publishRetryJob(), so a missing/malformed one on
+        // a message read from a retry topic means either a foreign
+        // producer wrote to the topic or the message is corrupt —
+        // reject it rather than guessing at defaults.
         const retryCountHeader = message.headers?.retry_count?.toString();
-
-        // Convert the header from string to number.
-        const retryCount = Number(retryCountHeader ?? '0');
-
-        // Read maximum retry count from Kafka headers.
         const maxRetriesHeader = message.headers?.max_retries?.toString();
-
-        const maxRetries = Number(
-          maxRetriesHeader ?? getMaxRetries(this.configService).toString(),
-        );
-
-        const originalTopic =
-          message.headers?.original_topic?.toString() ?? 'unknown';
-
-        // Read the retry job's unique identity from Kafka headers.
+        const originalTopicHeader = message.headers?.original_topic?.toString();
         const jobId = message.headers?.job_id?.toString();
-
-        // Read the original business event's stable identity.
         const eventId = message.headers?.event_id?.toString();
+        const scheduledRetryAt =
+          message.headers?.scheduled_retry_at?.toString();
+
+        const retryCount = Number(retryCountHeader);
+        const maxRetries = Number(maxRetriesHeader);
+        const scheduledRetryTime = scheduledRetryAt
+          ? new Date(scheduledRetryAt).getTime()
+          : NaN;
+
+        const missingHeaders = [
+          !retryCountHeader && 'retry_count',
+          !maxRetriesHeader && 'max_retries',
+          !originalTopicHeader && 'original_topic',
+          !jobId && 'job_id',
+          !eventId && 'event_id',
+          !scheduledRetryAt && 'scheduled_retry_at',
+        ].filter((header): header is string => Boolean(header));
+
+        const headersInvalid =
+          missingHeaders.length > 0 ||
+          !Number.isFinite(retryCount) ||
+          !Number.isFinite(maxRetries) ||
+          Number.isNaN(scheduledRetryTime);
+
+        if (headersInvalid) {
+          this.logger.error('invalid_retry_message_headers', {
+            missingHeaders,
+            retryCount: retryCountHeader,
+            maxRetries: maxRetriesHeader,
+            originalTopic: originalTopicHeader,
+            jobId,
+            eventId,
+            scheduledRetryAt,
+            offset: message.offset,
+          });
+
+          return;
+        }
+
+        const originalTopic = originalTopicHeader as string;
 
         this.logger.info('retry_message_received', {
           jobId,
@@ -107,16 +136,10 @@ export class RetryConsumer implements OnModuleInit, OnModuleDestroy {
 
         this.metricsService.increment('retries_processed');
 
-        const scheduledRetryAt =
-          message.headers?.scheduled_retry_at?.toString();
+        const latencyMs = Date.now() - scheduledRetryTime;
 
-        if (scheduledRetryAt) {
-          const scheduledTime = new Date(scheduledRetryAt).getTime();
-          const latencyMs = Date.now() - scheduledTime;
-
-          if (latencyMs >= 0) {
-            this.metricsService.recordRetryLatency(latencyMs);
-          }
+        if (latencyMs >= 0) {
+          this.metricsService.recordRetryLatency(latencyMs);
         }
 
         try {

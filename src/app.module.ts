@@ -12,6 +12,8 @@ import { IdempotencyModule } from './idempotency/idempotency.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { ConfigModule } from '@nestjs/config';
+import { validateEnv } from './config/env.validation';
+import { HealthController } from './health/health.controller';
 
 @Module({
   // RedisModule is a module (exports RedisService), so it belongs in
@@ -19,13 +21,19 @@ import { ConfigModule } from '@nestjs/config';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // Fails startup immediately with a clear message on missing/invalid
+      // config, instead of surfacing as a confusing runtime error later.
+      validate: validateEnv,
     }),
     RedisModule,
     IdempotencyModule,
     LoggerModule,
     MetricsModule,
   ],
-  controllers: [AppController],
+  // HealthController lives here (rather than its own module) because it
+  // needs both RedisService (via RedisModule, imported above) and
+  // KafkaService (a provider below) — the same shape as AppController.
+  controllers: [AppController, HealthController],
   // Providers are classes managed by NestJS dependency injection.
   //
   // KafkaService       → produces Kafka messages

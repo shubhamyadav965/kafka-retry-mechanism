@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { RetryJob } from './retry-job';
+import { AppLogger } from '../common/logger/app.logger';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -31,11 +32,28 @@ export class RedisService implements OnModuleDestroy {
   // Claims expire so a crashed instance cannot block a job forever.
   private readonly retryClaimTtlSeconds = 30;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly logger: AppLogger,
+  ) {
     this.redis = new Redis({
       host: this.configService.get<string>('REDIS_HOST'),
       port: this.configService.get<number>('REDIS_PORT'),
     });
+
+    // Without a listener, ioredis prints connection errors (e.g. a
+    // broker restart) as raw "Unhandled error event" noise on stdout,
+    // bypassing our structured logs.
+    this.redis.on('error', (error) => {
+      this.logger.error('redis_connection_error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  // Lightweight liveness check for the health endpoint.
+  async ping(): Promise<void> {
+    await this.redis.ping();
   }
 
   // Add a retry job to Redis.
